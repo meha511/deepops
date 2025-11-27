@@ -1,0 +1,40 @@
+# GPU Operator configuration for RKE2 hybrid cluster
+# Driver and toolkit already on host, just need device plugin
+
+driver:
+  enabled: false  # Driver already installed on host
+
+toolkit:
+  enabled: false  # NVIDIA Container Toolkit already configured
+
+devicePlugin:
+  enabled: true
+  version: v0.14.1
+
+dcgm:
+  enabled: true
+
+dcgmExporter:
+  enabled: true
+  serviceMonitor:
+    enabled: false  # Enable if you deploy Prometheus
+
+gfd:
+  enabled: true
+
+migManager:
+  enabled: false
+
+nfd:
+  enabled: true
+
+operator:
+  defaultRuntime: containerd
+
+# Only deploy on GPU worker node
+daemonsets:
+  priorityClassName: system-node-critical
+  tolerations:
+    - operator: "Exists"
+  nodeSelector:
+    nvidia.com/gpu: "true"

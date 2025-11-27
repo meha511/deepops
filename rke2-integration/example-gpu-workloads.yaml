@@ -1,0 +1,254 @@
+# Example GPU Workload Manifests for Testing
+---
+# 1. Simple GPU Test Pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-test-basic
+  namespace: default
+spec:
+  restartPolicy: OnFailure
+  containers:
+  - name: cuda-test
+    image: nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda11.7.1
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+
+---
+# 2. NVIDIA SMI Check
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nvidia-smi-check
+  namespace: default
+spec:
+  restartPolicy: OnFailure
+  containers:
+  - name: nvidia-smi
+    image: nvidia/cuda:11.8.0-base-ubuntu22.04
+    command: ["nvidia-smi"]
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+
+---
+# 3. PyTorch GPU Test
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pytorch-gpu-test
+  namespace: default
+spec:
+  restartPolicy: OnFailure
+  containers:
+  - name: pytorch
+    image: pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        python <<EOF
+        import torch
+        print("PyTorch version:", torch.__version__)
+        print("CUDA available:", torch.cuda.is_available())
+        print("CUDA version:", torch.version.cuda)
+        print("GPU count:", torch.cuda.device_count())
+        if torch.cuda.is_available():
+            print("GPU name:", torch.cuda.get_device_name(0))
+            print("GPU memory:", torch.cuda.get_device_properties(0).total_memory / 1e9, "GB")
+        EOF
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+
+---
+# 4. TensorFlow GPU Test
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tensorflow-gpu-test
+  namespace: default
+spec:
+  restartPolicy: OnFailure
+  containers:
+  - name: tensorflow
+    image: tensorflow/tensorflow:2.13.0-gpu
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        python <<EOF
+        import tensorflow as tf
+        print("TensorFlow version:", tf.__version__)
+        print("GPU devices:", tf.config.list_physical_devices('GPU'))
+        print("Built with CUDA:", tf.test.is_built_with_cuda())
+        print("GPU available:", tf.config.list_physical_devices('GPU'))
+        EOF
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+
+---
+# 5. Jupyter Notebook with GPU
+apiVersion: v1
+kind: Pod
+metadata:
+  name: jupyter-gpu
+  namespace: default
+  labels:
+    app: jupyter
+spec:
+  containers:
+  - name: jupyter
+    image: jupyter/tensorflow-notebook:latest
+    ports:
+    - containerPort: 8888
+      name: jupyter
+    env:
+    - name: JUPYTER_ENABLE_LAB
+      value: "yes"
+    command: ["start-notebook.sh"]
+    args:
+      - "--NotebookApp.token=''"
+      - "--NotebookApp.password=''"
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+        memory: "8Gi"
+        cpu: "4"
+      requests:
+        memory: "4Gi"
+        cpu: "2"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyter-gpu
+  namespace: default
+spec:
+  selector:
+    app: jupyter
+  ports:
+  - port: 8888
+    targetPort: 8888
+    nodePort: 30888
+  type: NodePort
+
+---
+# 6. GPU Stress Test
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-burn-test
+  namespace: default
+spec:
+  restartPolicy: OnFailure
+  containers:
+  - name: gpu-burn
+    image: nvidia/cuda:11.8.0-base-ubuntu22.04
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        apt-get update && apt-get install -y git build-essential
+        cd /tmp
+        git clone https://github.com/wilicc/gpu-burn.git
+        cd gpu-burn
+        make
+        ./gpu_burn 60  # Run for 60 seconds
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+
+---
+# 7. Multi-GPU Pod (if you have 2 GPUs)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multi-gpu-test
+  namespace: default
+spec:
+  restartPolicy: OnFailure
+  containers:
+  - name: pytorch-multi
+    image: pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
+    command: ["/bin/bash", "-c"]
+    args:
+      - |
+        python <<EOF
+        import torch
+        print(f"Available GPUs: {torch.cuda.device_count()}")
+        for i in range(torch.cuda.device_count()):
+            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+        EOF
+    resources:
+      limits:
+        nvidia.com/gpu: 2  # Request 2 GPUs
+
+---
+# 8. Persistent Jupyter with Storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jupyter-storage
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: nfs-client  # Adjust to your storage class
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jupyter-gpu-persistent
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jupyter-persistent
+  template:
+    metadata:
+      labels:
+        app: jupyter-persistent
+    spec:
+      containers:
+      - name: jupyter
+        image: pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            pip install jupyter jupyterlab
+            jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+        ports:
+        - containerPort: 8888
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            memory: "16Gi"
+            cpu: "4"
+          requests:
+            memory: "8Gi"
+            cpu: "2"
+      volumes:
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: jupyter-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyter-gpu-persistent
+  namespace: default
+spec:
+  selector:
+    app: jupyter-persistent
+  ports:
+  - port: 8888
+    targetPort: 8888
+    nodePort: 30889
+  type: NodePort

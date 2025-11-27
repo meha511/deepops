@@ -1,0 +1,43 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-24.04"  # Ubuntu 24.04 LTS
+  config.vm.provider "virtualbox"
+
+  # Minimal provisioning - basic system setup only
+  COMMON_PROVISION = <<-SHELL
+    set -eux
+
+    # Update system
+    apt-get update
+
+    # Install basic utilities
+    apt-get install -y \
+      curl \
+      wget \
+      vim \
+      git \
+      net-tools \
+      ca-certificates \
+      gnupg \
+      lsb-release
+
+    echo "VM provisioned successfully. Ready for manual Kubernetes setup."
+  SHELL
+
+  # Control Plane
+  config.vm.define "control" do |node|
+    node.vm.hostname = "k8s-control"
+    node.vm.network "private_network", ip: "192.168.56.20"
+
+    node.vm.provider "virtualbox" do |vb|
+      vb.name = "k8s-control"
+      vb.cpus = 4
+      vb.memory = 8192
+    end
+
+    node.vm.provision "shell", inline: COMMON_PROVISION
+  end
+
+  # Workers removed - Host machine will be used as GPU worker node
+  # Host will run kubelet and join this control plane via kubeadm
+  # This enables direct GPU access without VirtualBox passthrough limitations
+end

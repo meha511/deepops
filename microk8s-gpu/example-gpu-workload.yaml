@@ -1,0 +1,74 @@
+---
+# Simple GPU Test Pod
+# This pod runs nvidia-smi to verify GPU access
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-test-pod
+  namespace: default
+spec:
+  restartPolicy: OnFailure
+  containers:
+  - name: cuda-container
+    image: nvidia/cuda:12.2.0-base-ubuntu22.04
+    command: ["nvidia-smi"]
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+---
+# GPU Test Job
+# Runs a simple CUDA test and exits
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gpu-test-job
+  namespace: default
+spec:
+  template:
+    metadata:
+      labels:
+        app: gpu-test
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: cuda-test
+        image: nvidia/cuda:12.2.0-base-ubuntu22.04
+        command:
+          - /bin/bash
+          - -c
+          - |
+            echo "=== GPU Test Starting ==="
+            nvidia-smi
+            echo "=== GPU Details ==="
+            nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
+            echo "=== Test Complete ==="
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+  backoffLimit: 4
+---
+# GPU Deployment - Long Running
+# Keeps a pod running with GPU access for testing
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-app
+  template:
+    metadata:
+      labels:
+        app: gpu-app
+    spec:
+      containers:
+      - name: cuda-container
+        image: nvidia/cuda:12.2.0-base-ubuntu22.04
+        command: ["/bin/bash"]
+        args: ["-c", "while true; do nvidia-smi; sleep 300; done"]
+        resources:
+          limits:
+            nvidia.com/gpu: 1

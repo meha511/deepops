@@ -1,0 +1,56 @@
+# NVIDIA GPU Operator Helm Values for RKE2 Cluster
+# Use this for manual installation via Helm
+
+# For VirtualBox setup (no driver installation in VMs)
+driver:
+  enabled: false  # Drivers are on HOST, not in VMs
+
+toolkit:
+  enabled: false  # NVIDIA Container Toolkit on HOST
+
+devicePlugin:
+  enabled: true
+  version: v0.14.1
+
+# Enable for GPU monitoring
+dcgm:
+  enabled: true
+  
+dcgmExporter:
+  enabled: true
+  serviceMonitor:
+    enabled: true  # If using Prometheus Operator
+
+# GPU Feature Discovery
+gfd:
+  enabled: true
+
+# MIG Manager (only for A100/H100 GPUs)
+migManager:
+  enabled: false
+  
+# Node Feature Discovery
+nfd:
+  enabled: true
+
+# Operator settings
+operator:
+  defaultRuntime: containerd
+  
+# Tolerations if needed
+# tolerations:
+#   - key: "node-role.kubernetes.io/control-plane"
+#     operator: "Exists"
+#     effect: "NoSchedule"
+
+---
+# Alternative: For KVM/Libvirt with GPU passthrough in VMs
+
+# driver:
+#   enabled: true
+#   version: "525.105.17"
+#   repository: nvcr.io/nvidia
+# 
+# toolkit:
+#   enabled: true
+#   version: v1.14.3-ubuntu20.04

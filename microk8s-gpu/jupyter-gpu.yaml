@@ -1,0 +1,73 @@
+---
+# Jupyter Notebook with GPU Support
+# Access via: kubectl port-forward svc/jupyter-gpu 8888:8888
+# Token will be in pod logs: kubectl logs -f deployment/jupyter-gpu
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jupyter-data
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jupyter-gpu
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jupyter-gpu
+  template:
+    metadata:
+      labels:
+        app: jupyter-gpu
+    spec:
+      containers:
+      - name: jupyter
+        image: pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+        command: ["/bin/bash"]
+        args:
+          - -c
+          - |
+            pip install jupyter jupyterlab matplotlib numpy pandas scikit-learn
+            jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+        ports:
+        - containerPort: 8888
+          name: jupyter
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            memory: "8Gi"
+            cpu: "4"
+          requests:
+            memory: "4Gi"
+            cpu: "2"
+        volumeMounts:
+        - name: jupyter-data
+          mountPath: /workspace
+        workingDir: /workspace
+      volumes:
+      - name: jupyter-data
+        persistentVolumeClaim:
+          claimName: jupyter-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyter-gpu
+  namespace: default
+spec:
+  selector:
+    app: jupyter-gpu
+  ports:
+  - port: 8888
+    targetPort: 8888
+    protocol: TCP
+  type: ClusterIP

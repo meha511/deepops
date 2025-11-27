@@ -1,0 +1,172 @@
+---
+# Lightweight GPU Test - CUDA Base Image (~200MB)
+# Quick test to verify GPU access without heavy ML frameworks
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cuda-simple-test
+  namespace: default
+spec:
+  template:
+    metadata:
+      labels:
+        app: cuda-simple-test
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: cuda-test
+        image: nvidia/cuda:12.2.0-base-ubuntu22.04
+        command:
+          - /bin/bash
+          - -c
+          - |
+            echo "=========================================="
+            echo "CUDA Simple GPU Test"
+            echo "=========================================="
+            echo ""
+            echo "=== GPU Information ==="
+            nvidia-smi
+            echo ""
+            echo "=== GPU Details ==="
+            nvidia-smi --query-gpu=index,name,driver_version,memory.total,memory.free,compute_cap --format=csv,noheader
+            echo ""
+            echo "=== CUDA Version ==="
+            nvcc --version || echo "nvcc not available in base image (expected)"
+            echo ""
+            echo "=== GPU Count ==="
+            nvidia-smi --query-gpu=count --format=csv,noheader | head -1
+            echo ""
+            echo "=== Test Complete ==="
+            echo "✓ GPU is accessible from Kubernetes pod!"
+            echo "=========================================="
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+  backoffLimit: 2
+---
+# Lightweight GPU Memory Test
+# Tests GPU memory allocation
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cuda-memory-test
+  namespace: default
+spec:
+  template:
+    metadata:
+      labels:
+        app: cuda-memory-test
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: cuda-memory
+        image: nvidia/cuda:12.2.0-base-ubuntu22.04
+        command:
+          - /bin/bash
+          - -c
+          - |
+            echo "=========================================="
+            echo "GPU Memory Test"
+            echo "=========================================="
+            echo ""
+            nvidia-smi --query-gpu=memory.total,memory.used,memory.free --format=csv
+            echo ""
+            echo "=== Running continuous monitoring for 10 seconds ==="
+            for i in {1..10}; do
+              echo "Sample $i:"
+              nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader,nounits
+              sleep 1
+            done
+            echo ""
+            echo "✓ Memory test complete!"
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+  backoffLimit: 2
+---
+# Ultra-lightweight - Just nvidia-smi
+# Smallest possible test (~200MB image)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-quick-test
+  namespace: default
+spec:
+  restartPolicy: Never
+  containers:
+  - name: nvidia-smi
+    image: nvidia/cuda:12.2.0-base-ubuntu22.04
+    command: 
+      - nvidia-smi
+      - --query-gpu=name,driver_version,memory.total
+      - --format=csv
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+---
+# CUDA Runtime Test (slightly larger ~500MB but includes CUDA samples)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cuda-runtime-test
+  namespace: default
+spec:
+  template:
+    metadata:
+      labels:
+        app: cuda-runtime-test
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: cuda-runtime
+        image: nvidia/cuda:12.2.0-runtime-ubuntu22.04
+        command:
+          - /bin/bash
+          - -c
+          - |
+            echo "=========================================="
+            echo "CUDA Runtime Test"
+            echo "=========================================="
+            nvidia-smi
+            echo ""
+            echo "=== CUDA Libraries ==="
+            ldconfig -p | grep cuda | head -10
+            echo ""
+            echo "=== GPU Compute Capability ==="
+            nvidia-smi --query-gpu=compute_cap --format=csv,noheader
+            echo ""
+            echo "✓ Runtime test complete!"
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+  backoffLimit: 2
+---
+# Persistent GPU Monitor Pod
+# Keeps running and monitors GPU every 30 seconds
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-monitor
+  namespace: default
+spec:
+  restartPolicy: Always
+  containers:
+  - name: monitor
+    image: nvidia/cuda:12.2.0-base-ubuntu22.04
+    command:
+      - /bin/bash
+      - -c
+      - |
+        echo "GPU Monitor Started - Checking every 30 seconds"
+        while true; do
+          echo "=== $(date) ==="
+          nvidia-smi --query-gpu=timestamp,name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu --format=csv
+          echo ""
+          sleep 30
+        done
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+        memory: "256Mi"
+      requests:
+        memory: "128Mi"
